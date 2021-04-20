@@ -1,4 +1,4 @@
-tag: presentation
+tag: crawler_1.0
 datastore:
   - config: # Using the !ENV tag you can use env variable names.
       hostname: !ENV ${MYSQL_HOST}

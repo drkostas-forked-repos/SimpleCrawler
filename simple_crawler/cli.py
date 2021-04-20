@@ -13,6 +13,7 @@ DEFAULT_CHECK_HEAD = False
 DEFAULT_DISOBEY_ROBOTS = False
 DEFAULT_WITH_QUERY = False
 DEFAULT_WITH_FRAGMENT = False
+DEFAULT_RECOVER_FROM_ERROR = False
 
 
 @click.command()
@@ -25,6 +26,7 @@ DEFAULT_WITH_FRAGMENT = False
 @click.option("-d", "--disobey-robots", is_flag=True, default=DEFAULT_DISOBEY_ROBOTS)
 @click.option("-wq", "--with-query", is_flag=True, default=DEFAULT_WITH_QUERY)
 @click.option("-wf", "--with-fragment", is_flag=True, default=DEFAULT_WITH_FRAGMENT)
+@click.option("-re", "--recover-from-error", is_flag=True, default=DEFAULT_RECOVER_FROM_ERROR)
 @click.option("--debug/--no-debug", default=False)
 def crawl(
     url,
@@ -36,6 +38,7 @@ def crawl(
     disobey_robots,
     with_query,
     with_fragment,
+    recover_from_error,
     debug,
 ):
     if config:
@@ -49,6 +52,7 @@ def crawl(
         obey_robots=(not disobey_robots),
         trim_query=(not with_query),
         trim_fragment=(not with_fragment),
+        recover_from_error=recover_from_error,
         db_config=config,
     )
 

@@ -6,7 +6,7 @@ import time
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
 from typing import Set
-from typing import Union, Dict
+from typing import Union, List
 from urllib.robotparser import RobotFileParser
 
 from requests import Session
@@ -69,7 +69,9 @@ class Crawler:
         check_head: bool = False,
         trim_query: bool = True,
         trim_fragment: bool = True,
+        recover_from_error: bool = False,
         db_config: Configuration = None,
+        metadata_table_name: str = 'crawler_metadata'
     ):
         # config elements
         self.user_agent = user_agent
@@ -91,10 +93,37 @@ class Crawler:
         # self.record_client_errors = False
         # self.record_server_errors = False
 
+        self.recover_from_error = recover_from_error
+        self.recover_url = None
+        self.recover_hrefs = None
+
         if db_config:
             self.db = MySqlDatastore(db_config.get_datastores()[0])
+            self.metadata_table_name = metadata_table_name
+            self.tag = db_config.tag
+            if self.recover_from_error:
+                self.recover_url, self.recover_hrefs = self.recover()
         else:
             self.db = None
+            if self.recover_from_error:
+                raise Exception("Can't recover from error without setting a DB!")
+
+    def recover(self):
+        retrieved_data = self.db.select_from_table(table=self.metadata_table_name,
+                                                   columns='*',
+                                                   where=f"crawler_tag='{self.tag}'",
+                                                   order_by='id',
+                                                   asc_or_desc='DESC')
+
+        last_found_entry = next(filter(lambda row: row[2] == 'Found', retrieved_data))
+        url = make_hyperlink(last_found_entry[3])
+        current_href = last_found_entry[4]
+        hrefs = last_found_entry[5].split(',')
+        href_index = hrefs.index(current_href)
+        hrefs = hrefs[href_index:]
+        hrefs = [make_hyperlink(href) for href in hrefs]
+        hrefs = make_hyperlink_set(hrefs)
+        return url, hrefs
 
     @property
     def config(self) -> dict:
@@ -151,26 +180,52 @@ class Crawler:
 
         return hrefs
 
+    @staticmethod
+    def hrefs_to_str(hrefs: HyperlinkSet) -> str:
+        hrefs_l_of_str = [str(el) for el in hrefs]
+        return ','.join(hrefs_l_of_str)
+
     def _crawl_url(self, url: Hyperlink) -> None:
         """crawl any url for all the other urls (in <a hrefs=url> tags)"""
+
+        if self.recover_url:
+            print("Ignoring url because recover was requested.")
+            url = self.recover_url
+            self.recover_url = None
+
         print(f"CRAWLING: {url}")
-        # if self.db:
-        #     data = {"action": "crawling", "url": f"{url}"}
-        #     self.db.insert_into_table(table="tmp_crawler", data=data)
+        if self.db:
+            data = {"action": "Crawling",
+                    "crawler_tag": self.tag,
+                    "url": f"{url}",
+                    "comments": "Starting"}
+            self.db.insert_into_table(table=self.metadata_table_name, data=data)
         # try get 200 responses
         try:
             # get all links on page
-            hrefs = self._get_hrefs(url)
+            if self.recover_hrefs:
+                hrefs = self.recover_hrefs
+                self.recover_hrefs = None
+            else:
+                hrefs = self._get_hrefs(url)
+
             print(f"VISITED: {url}")
-            # if self.db:
-            #     data = {"action": "visited", "url": f"{url}"}
-            #     self.db.insert_into_table(table="tmp_crawler", data=data)
+            if self.db:
+                data = {"action": "Visited",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "hrefs": self.hrefs_to_str(hrefs)}
+                self.db.insert_into_table(table=self.metadata_table_name, data=data)
             # go through all the links found and print them to console
             for href in hrefs:
                 print(f"FOUND: {href} ON {url}")
-                # if self.db:
-                #     data = {"action": "found", "url": f"{url}"}
-                #     self.db.insert_into_table(table="tmp_crawler", data=data)
+                if self.db:
+                    data = {"action": "Found",
+                            "crawler_tag": self.tag,
+                            "url": f"{url}",
+                            "current_href": f"{href}",
+                            "hrefs": self.hrefs_to_str(hrefs)}
+                    self.db.insert_into_table(table=self.metadata_table_name, data=data)
 
             # get all unique links from page that match the domain
             hrefs = self._parse_hrefs(hrefs, url)
@@ -190,15 +245,33 @@ class Crawler:
             # todo: as this does not add to done_urls, we will have to wait
             #  for timeout
             print(f"ERROR: {exc} ON {url}")
+            if self.db:
+                data = {"action": "Error",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "comments": f"(ClientError, ServerError) Error: {exc}"}
+                self.db.insert_into_table(table=self.metadata_table_name, data=data)
 
         # or wrong mime type
         except WrongMIMEType:
             print(f"VISITED: {url}")
-            # if self.db:
-            #     data = {"action": "visited", "url": f"{url}"}
-            #     self.db.insert_into_table(table="tmp_crawler", data=data)
+            if self.db:
+                data = {"action": "Visited",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "comments": f"WrongMIMEType"}
+                self.db.insert_into_table(table="tmp_crawler", data=data)
             # add to done_urls as it is fair to report .pdf, etc files to found urls
             self._done_urls.add(url)
+
+        except KeyboardInterrupt:
+            print(f"KeyboardInterrupt ON {url}")
+            if self.db:
+                data = {"action": "Error",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "comments": f"KeyboardInterrupt"}
+                self.db.insert_into_table(table=self.metadata_table_name, data=data)
 
     def _get_robots(self, domain: Hyperlink) -> RobotFileParser:
         """get the robots.txt from any domain"""

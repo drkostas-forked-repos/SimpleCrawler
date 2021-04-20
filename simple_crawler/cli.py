@@ -6,7 +6,7 @@ import click
 from simple_crawler.crawler import Crawler
 from simple_crawler.crawler import DEFAULT_USER_AGENT
 from simple_crawler import Configuration
-
+# comment
 DEFAULT_MAX_WORKERS = 1
 DEFAULT_TIMEOUT = 10
 DEFAULT_CHECK_HEAD = False

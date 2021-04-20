@@ -245,11 +245,12 @@ class Crawler:
             # todo: as this does not add to done_urls, we will have to wait
             #  for timeout
             print(f"ERROR: {exc} ON {url}")
-            data = {"action": "Error",
-                    "crawler_tag": self.tag,
-                    "url": f"{url}",
-                    "comments": f"(ClientError, ServerError) Error: {exc}"}
-            self.db.insert_into_table(table=self.metadata_table_name, data=data)
+            if self.db:
+                data = {"action": "Error",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "comments": f"(ClientError, ServerError) Error: {exc}"}
+                self.db.insert_into_table(table=self.metadata_table_name, data=data)
 
         # or wrong mime type
         except WrongMIMEType:
@@ -265,11 +266,12 @@ class Crawler:
 
         except KeyboardInterrupt:
             print(f"KeyboardInterrupt ON {url}")
-            data = {"action": "Error",
-                    "crawler_tag": self.tag,
-                    "url": f"{url}",
-                    "comments": f"KeyboardInterrupt"}
-            self.db.insert_into_table(table=self.metadata_table_name, data=data)
+            if self.db:
+                data = {"action": "Error",
+                        "crawler_tag": self.tag,
+                        "url": f"{url}",
+                        "comments": f"KeyboardInterrupt"}
+                self.db.insert_into_table(table=self.metadata_table_name, data=data)
 
     def _get_robots(self, domain: Hyperlink) -> RobotFileParser:
         """get the robots.txt from any domain"""
